@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  TargetEmail:
+    Type: String
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain    
+    Properties:
+      BucketName: !Sub "demo-ci-cd-source-bucket"
+  TargetTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: demo-ci-cd-target-topic
+      Subscription:
+        - Endpoint: !Sub "${TargetEmail}"
+          Protocol: email
+  S3ToSNSFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: demo-ci-cd-lambda-function
+      Handler: demo.S3ToSnsHandler::handleRequest
+      Runtime: java11
+      CodeUri: build/distributions/demo-ci-cd-lambda-function.zip
+      Environment:
+        Variables:
+          Region: !Sub "${AWS::Region}"
+          TopicARN: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:demo-ci-cd-target-topic"
+      AutoPublishAlias: live
+      DeploymentPreference:
+        Type: AllAtOnce
+      Timeout: 60
+      MemorySize: 512
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: demo-ci-cd-lambda-function
+        - S3ReadPolicy:
+            BucketName: !Sub "demo-ci-cd-source-bucket"
+        - SNSPublishMessagePolicy:
+            TopicName: demo-ci-cd-target-topic
+      Events:
+        S3ObjectCreated:
+          Type: S3
+          Properties:
+            Bucket: !Ref SourceBucket
+            Events: s3:ObjectCreated:*
+        S3ObjectRemoved:
+          Type: S3
+          Properties:
+            Bucket: !Ref SourceBucket
+            Events: s3:ObjectRemoved:*
